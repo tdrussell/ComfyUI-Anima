@@ -180,7 +180,13 @@ class QwenWithAdapter(sd1_clip.SD1ClipModel):
     def encode_token_weights(self, token_weight_pairs):
         token_weight_pairs_qwen3 = token_weight_pairs["qwen3"]
         token_weight_pairs_t5 = token_weight_pairs["t5xxl"]
-        result = self.qwen3_600m.encode_token_weights(token_weight_pairs_qwen3)
+
+        def set_weights_to_1(token_weights_lists):
+            return [
+                [(token, 1.0) for token, _ in inner_list] for inner_list in token_weights_lists
+            ]
+
+        result = self.qwen3_600m.encode_token_weights(set_weights_to_1(token_weight_pairs_qwen3))
         if self.llm_adapter is not None:
             hidden_states = result[0].cuda()
             qwen_attn_mask = result[2]['attention_mask'].cuda()
@@ -189,6 +195,12 @@ class QwenWithAdapter(sd1_clip.SD1ClipModel):
             with torch.autocast(hidden_states.device.type, dtype=torch.bfloat16):
                 hidden_states = self.llm_adapter(hidden_states, t5_input_ids, target_attention_mask=t5_attn_mask, source_attention_mask=qwen_attn_mask)
                 hidden_states[~t5_attn_mask.bool()] = 0
+
+            weights = torch.tensor([[t[1] for t in entry] for entry in token_weight_pairs_t5], dtype=hidden_states.dtype, device=hidden_states.device)
+            weights = weights.unsqueeze(-1)
+            assert weights.ndim == hidden_states.ndim
+            hidden_states *= weights
+
             result = (hidden_states, None, {'attention_mask': t5_attn_mask})
         return result
 
