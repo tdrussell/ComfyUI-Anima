@@ -518,7 +518,7 @@ class AnimaCheckpointLoader:
                 "weight_dtype": (["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"],)
             },
             "optional": {
-                "llm_adapter_name": (['None'] + get_llm_adapters(), {
+                "llm_adapter_name": (['None'] + get_llm_adapters() + folder_paths.get_filename_list("diffusion_models"), {
                     "default": 'None', "tooltip": "Override LLM adapter weights. Advanced option intended for testing."
                 }),
             },
@@ -549,9 +549,20 @@ class AnimaCheckpointLoader:
                 dit_sd[k] = v
 
         if llm_adapter_name != 'None':
-            llm_adapter_path = get_llm_adapter_path(llm_adapter_name)
+            try:
+                llm_adapter_path = get_llm_adapter_path(llm_adapter_name)
+            except ValueError:
+                llm_adapter_path = folder_paths.get_full_path_or_raise("diffusion_models", llm_adapter_name)
             llm_adapter_sd = comfy.utils.load_torch_file(llm_adapter_path)
-            llm_adapter_sd = {'llm_adapter.'+k: v for k, v in llm_adapter_sd.items()}
+            is_full_sd = False
+            for k in llm_adapter_sd:
+                if k.startswith('net.'):
+                    is_full_sd = True
+                    break
+            if is_full_sd:
+                llm_adapter_sd = {k[len('net.'):]: v for k, v in llm_adapter_sd.items() if k.startswith('net.llm_adapter')}
+            else:
+                llm_adapter_sd = {'llm_adapter.'+k: v for k, v in llm_adapter_sd.items()}
 
         model = comfy.sd.load_diffusion_model_state_dict(dit_sd, model_options=model_options)
 
